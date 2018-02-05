@@ -1,0 +1,23 @@
+{
+  "name": "core.type.template",
+  "version": "1.0.0",
+  "description": "Templates for core",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ido-ofir/core.type.template.git"
+  },
+  "keywords": [
+    "core",
+    "template"
+  ],
+  "author": "Ido Ofir",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ido-ofir/core.type.template/issues"
+  },
+  "homepage": "https://github.com/ido-ofir/core.type.template#readme"
+}
