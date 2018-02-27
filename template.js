@@ -9,7 +9,10 @@ module.exports = {
     extend: {
         templates: {},
         Template(def){
-            def['$_type'] = 'template';
+            if(Array.isArray(def)){
+                return def.map(this.Template)
+            }
+            def['core.type'] = 'template';
             return this.build(def);
         }
     },
@@ -270,6 +273,7 @@ module.exports = {
         });
 
         let plugin = {
+            parse: parse,
             update(){
                 
             }
