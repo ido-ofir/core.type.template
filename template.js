@@ -7,13 +7,30 @@ module.exports = {
         'core.import.react-dom',
     ],
     extend: {
+        template(name, props, ...children){
+            var Template = this.templates[name];
+            if(!Template){ return null; }
+            var { React } = core.imports;
+            return (
+                <Template { ...props }>
+                    { children }
+                </Template>
+            );
+        },
         templates: {},
-        Template(def){
-            if(Array.isArray(def)){
-                return def.map(this.Template)
+        Template(definition){
+            if(Array.isArray(definition)){
+                return definition.map(this.Template)
             }
-            def['core.type'] = 'template';
-            return this.build(def);
+            
+            var source = this.type.toSource({
+                id: definition.name,
+                key: definition.name,
+                type: 'template',
+                description: definition.description || '',
+              }, definition);
+        
+            return this.build(source, definition.done);
         }
     },
     init(definition, done){
@@ -25,13 +42,12 @@ module.exports = {
         function parse(item){
             if(core.isArray(item)) return item.map(parse);
             if(!core.isObject(item)) return item;
-            let code = item['core.template.code'];
             let parsed = {};
-            if(code){
+            if(item['core.template.code']){
                 return {
                     'core.template.getter': eval(`(
                         function (props, state){
-                            return ${code};
+                            return ${item['core.template.code']};
                         }
                     )`)
                 };
@@ -82,14 +98,13 @@ module.exports = {
             },
             render(){
                 let { item, template, path } = this.props;
-                
                 let {
                     type,
                     props = {},
                     children = []
                 } = item;
     
-                let Component = core.components[type] || core.components[`core.web.dom.${ type }`] || type;
+                let Component = core.components[type] || type;
                 let getter, newProps = {};
                 for(var m in props){
                     if(props[m]['core.template.getter']){
@@ -115,160 +130,301 @@ module.exports = {
         
 
         core.Type({
+            name: 'template.function',
+            extends: 'object',
+            defaultValue: {
+                body: 'function(){}'
+            },
+            schema: [
+                {
+                    key: 'body',
+                    type: 'string'
+                }
+            ],
+            build(source, done){
+                done({ 
+                    'core.template.function': eval(`(${ source.body })`) 
+                });
+            }
+        });
+
+        core.Type({
+            name: 'template.jsx',
+            schema: [
+                {
+                    key: 'source',
+                    type: 'string'
+                },
+                {
+                    key: 'code',
+                    type: 'string'
+                }
+            ],
+            defaultValue: {
+                type: 'core.web.dom.div',
+                props: {}
+            },
+            build(source, done){
+                done({
+                    'core.template.getter': eval(`(
+                        function (props, state){
+                            return ${ source.code };
+                        }
+                    )`)
+                });
+            }
+        });
+
+        core.Type({
+            name: 'template.children',
+            extends: 'string',
+            defaultValue: []
+        });
+
+        core.Type({
+            name: 'template.element',
+            schema: [
+                {
+                    key: 'type',
+                    type: 'ref',
+                    description: 'the type of the element',
+                    defaultValue: 'core.web.dom.div',
+                },{
+                    key: 'props',
+                    type: 'object',
+                    description: 'the props supplied to the element',
+                    defaultValue: {}
+                },{
+                    key: 'children',
+                    type: 'array',
+                    description: 'the children of this element',
+                    defaultValue: []
+                }
+            ],
+            defaultValue: {
+                type: 'core.web.dom.div',
+                props: {}
+            },
+            build(source, done){
+                debugger;
+                core.buildObject(source, function(a,b){
+                    debugger;
+                    done(a, b)
+                });
+                // this.buildObject(source, done);
+            }
+        });
+
+        core.Type({
+            name: 'template.body',
+            extends: 'template.element',
+            defaultValue: {
+                type: 'div',
+                props: {},
+                children: []
+            },
+            update(update){
+                var { target, parents } = update;
+                var parent = parents[0];
+                core.build(target, (body) => {
+                    var updateEvent = `core.template.update.${parent.value.name}`;
+                    var template = core.types.template.find(parent.id);
+                    template.body = parse(body);
+                    core.emit(updateEvent);
+                });
+            },
+            build(source, done){
+                this.buildObject(source, function(a,b){
+                    done(a, b)
+                });
+            }
+        });
+
+        core.Type({
+            name: 'template.text',
+            extends: 'text',
+            // build(source, done){
+            //     done(source.value);
+            // }
+        });
+
+        
+
+        core.Type({
             name: 'template',
             identifier: 'name',
             schema: [{
                 key: 'name',
                 type: 'string',
+                isRequired: true
             },{
                 key: 'description',
-                type: 'string',
+                type: 'text',
+                description: 'describes this template',
+                defaultValue: 'No description'
             },{
                 key: 'dependencies',
                 type: 'array',
             },{
                 key: 'body',
-                type: 'object',
+                type: 'template.body',
             },{
                 key: 'propTypes',
                 type: 'array',
             }],
-            build(def, done){
+            update(update){
+                var { internalPath, sourceElement, target } = update;
+                if(internalPath.length){
+                    var key = internalPath[0];
+                    if(key === 'body'){
+                        core.build(sourceElement, (body) => {
+                            var updateEvent = `core.template.update.${target.name}`;                            
+                            core.types.template.find(target.name).body = parse(body);
+                            core.emit(updateEvent);
+                        })
+                    }
+                }
+            },
+            build(source, done){
 
                 var core = this;
-                var { name, propTypes, body, dependencies } = def;
-                var parsed = parse(body);
-                var hoverEvent = `core.template.hover.${name}`;
-                var updateEvent = `core.template.update.${name}`;
+                
+                core.buildObject(source, (def)=>{
+                    var { name, propTypes, body, dependencies } = def;
+                    
+                    var hoverEvent = `core.template.hover.${name}`;
+                    var updateEvent = `core.template.update.${name}`;
+                    core.Component({
+                        name,
+                        propTypes,
+                        dependencies,
+                        get(){
+                            return {
+                                getInitialState(){
+                                    this.elements = {};
+                                    return {
+                                        useAnimations: true
+                                    };
+                                },                 
+                                componentDidMount(){
 
-                core.Component({
-                    name,
-                    propTypes,
-                    dependencies,
-                    get(){
-                        return {
-                            getInitialState(){
-                                this.elements = {};
-                                this.body = parsed;
-                                return {
-                                    useAnimations: true
-                                };
-                            },                 
-                            componentDidMount(){
+                                    window.template = this;
 
-                                window.template = this;
+                                    core.on(hoverEvent, this.onHover);
+                                    core.on(updateEvent, this.onUpdate);
 
-                                core.on(hoverEvent, this.onHover);
-                                core.on(updateEvent, this.onUpdate);
-
-                                this.root = ReactDom.findDOMNode(this);
-                                this.isHovering = false;
-                                this.hoveredElement = null;
-                                this.mask = document.createElement('div');
-                                this.mask.style.position = 'absolute';
-                                this.mask.style.background = 'rgba(70,70,250, 0.6)';
-                                
-                                this.display = document.createElement('div');
-                                this.display.style.background = '#ff8';
-                                this.display.style.padding = '1px 4px';
-                                this.display.style.border = '1px solid #aaa';
-                                this.display.style.borderRadius = '2px';
-                                this.display.style.position = 'absolute';
-                                this.display.style.fontSize = '10px';
-                                this.display.style.fontFamily = 'monospace';
-                                if(this.state.useAnimations){
-                                    this.display.style.WebkitTransition = '0.2s ease';
-                                    this.display.style.transition = '0.2s ease';
-                                    this.mask.style.WebkitTransition = '0.2s ease';
-                                    this.mask.style.transition = '0.2s ease';
-                                }
-                                
-                                if(!this.root.style.position){
-                                    this.root.style.position = 'relative';
-                                }
-                                
-                            },
-                            componentWillUnmount(){
-                                core.off(hoverEvent, this.onHover);
-                            },
-                            add(path, element){
-                                var id = path.join('.');
-                                this.elements[id] = element;
-                            },
-                            remove(path, element){
-                                delete this.elements[id];
-                            },
-                            getTop(element, top){
-                                if(!top) { top = 0; }
-                                if((element === this.root) || !element){ return top; }
-                                top += element.offsetTop;
-                                return this.getTop(element.parentElement, top);
-                            },
-                            getLeft(element, left){
-                                if(!left) { left = 0; }
-                                if((element === this.root) || !element){ return left; }
-                                left += element.offsetLeft;
-                                return this.getLeft(element.parentElement, left);
-                            },
-                            onHover(path){
-                                var node;
-                                if(!path.length){
-                                    if(this.isHovering){
-                                        this.root.removeChild(this.mask);
-                                        this.root.removeChild(this.display);
-                                        this.isHovering = false;
+                                    this.root = ReactDom.findDOMNode(this);
+                                    this.isHovering = false;
+                                    this.hoveredElement = null;
+                                    this.mask = document.createElement('div');
+                                    this.mask.style.position = 'absolute';
+                                    this.mask.style.background = 'rgba(70,70,250, 0.6)';
+                                    
+                                    this.display = document.createElement('div');
+                                    this.display.style.background = '#ff8';
+                                    this.display.style.padding = '1px 4px';
+                                    this.display.style.border = '1px solid #aaa';
+                                    this.display.style.borderRadius = '2px';
+                                    this.display.style.position = 'absolute';
+                                    this.display.style.fontSize = '10px';
+                                    this.display.style.fontFamily = 'monospace';
+                                    if(this.state.useAnimations){
+                                        this.display.style.WebkitTransition = '0.2s ease';
+                                        this.display.style.transition = '0.2s ease';
+                                        this.mask.style.WebkitTransition = '0.2s ease';
+                                        this.mask.style.transition = '0.2s ease';
                                     }
-                                }
-                                else{
+                                    
+                                    if(!this.root.style.position){
+                                        this.root.style.position = 'relative';
+                                    }
+                                    
+                                },
+                                componentWillUnmount(){
+                                    core.off(hoverEvent, this.onHover);
+                                },
+                                add(path, element){
                                     var id = path.join('.');
-                                    var element = this.elements[id];
-                                    if(!element){
-                                        return console.log('no element');
+                                    this.elements[id] = element;
+                                },
+                                remove(path, element){
+                                    delete this.elements[id];
+                                },
+                                getTop(element, top){
+                                    if(!top) { top = 0; }
+                                    if((element === this.root) || !element){ return top; }
+                                    top += element.offsetTop;
+                                    return this.getTop(element.parentElement, top);
+                                },
+                                getLeft(element, left){
+                                    if(!left) { left = 0; }
+                                    if((element === this.root) || !element){ return left; }
+                                    left += element.offsetLeft;
+                                    return this.getLeft(element.parentElement, left);
+                                },
+                                onHover(path){
+                                    var node;
+                                    if(!path.length){
+                                        if(this.isHovering){
+                                            this.root.removeChild(this.mask);
+                                            this.root.removeChild(this.display);
+                                            this.isHovering = false;
+                                        }
                                     }
-                                    var domNode = ReactDom.findDOMNode(element);
-                                    var computedStyle = window.getComputedStyle(domNode);
-                                    var top = this.getTop(domNode);
-                                    var left = this.getLeft(domNode);
-                                    var width = computedStyle.width.replace('px', '');
-                                    var height = computedStyle.height.replace('px', '');
-                                    this.mask.style.top = top + 'px';
-                                    this.mask.style.left = left + 'px';
-                                    this.mask.style.width = width + 'px';
-                                    this.mask.style.height = height + 'px';
-                                    this.display.style.top = (top + Number(height)) + 'px';
-                                    this.display.style.left = left + 'px';
-                                    this.display.innerHTML = `${element.props.item.type} ${width} x ${height}`;
-                                    if(!this.isHovering){
-                                        this.isHovering = true;
-                                        this.root.appendChild(this.mask);
-                                        this.root.appendChild(this.display);
+                                    else{
+                                        var id = path.join('.');
+                                        var element = this.elements[id];
+                                        if(!element){
+                                            return console.log('no element');
+                                        }
+                                        var domNode = ReactDom.findDOMNode(element);
+                                        var computedStyle = window.getComputedStyle(domNode);
+                                        var top = this.getTop(domNode);
+                                        var left = this.getLeft(domNode);
+                                        var width = computedStyle.width.replace('px', '');
+                                        var height = computedStyle.height.replace('px', '');
+                                        this.mask.style.top = top + 'px';
+                                        this.mask.style.left = left + 'px';
+                                        this.mask.style.width = width + 'px';
+                                        this.mask.style.height = height + 'px';
+                                        this.display.style.top = (top + Number(height)) + 'px';
+                                        this.display.style.left = left + 'px';
+                                        this.display.innerHTML = `${element.props.item.type} ${width} x ${height}`;
+                                        if(!this.isHovering){
+                                            this.isHovering = true;
+                                            this.root.appendChild(this.mask);
+                                            this.root.appendChild(this.display);
+                                        }
+                                        this.hoveredElement = element;
                                     }
-                                    this.hoveredElement = element;
+                                },
+                                onUpdate(value){
+                                    this.forceUpdate();
+                                },
+                                render(){
+                                    var instance = core.types.template.find(name);
+                                    return (
+                                        <TemplateItem 
+                                            path={ [0] }
+                                            item={ instance.body }
+                                            template={ this }
+                                            onMount={ this.add }
+                                            onUnmount={ this.remove }/>
+                                    )
                                 }
-                            },
-                            onUpdate(value){
-                                this.body = parse(value.body);
-                                console.log('this.body', this.body);
-                                this.forceUpdate();
-                            },
-                            render(){
-                                return (
-                                    <TemplateItem 
-                                        path={ [0] }
-                                        item={ this.body }
-                                        template={ this }
-                                        onMount={ this.add }
-                                        onUnmount={ this.remove }/>
-                                )
-                            }
-                        };
-                    },
-                    done(template){
-                        core.templates[name] = template;
-                        done(template);
-                    }
+                            };
+                        },
+                        done(template){
+                            core.templates[name] = template;
+                            done(template, ()=>{
+                                // after the instance have bee created
+                                var parsed = parse(body);
+                                core.types.template.find(name).body = parsed;
+                            });
+                        }
+                    });
                 });
-                core.definitions[name] = def;
+                
             }
         });
 
