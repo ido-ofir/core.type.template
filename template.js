@@ -207,7 +207,7 @@ module.exports = {
             },
             build(source, done){
                 debugger;
-                core.buildObject(source, function(a,b){
+                core.type.buildObject(source, function(a,b){
                     debugger;
                     done(a, b)
                 });
@@ -224,9 +224,9 @@ module.exports = {
                 children: []
             },
             update(update){
-                var { target, parents } = update;
+                var { target, parents, value } = update;
                 var parent = parents[0];
-                core.build(target, (body) => {
+                core.build(value, (body) => {
                     var updateEvent = `core.template.update.${parent.value.name}`;
                     var template = core.types.template.find(parent.id);
                     template.body = parse(body);
@@ -234,7 +234,7 @@ module.exports = {
                 });
             },
             build(source, done){
-                this.buildObject(source, function(a,b){
+                this.type.buildObject(source, function(a,b){
                     done(a, b)
                 });
             }
@@ -289,7 +289,7 @@ module.exports = {
 
                 var core = this;
                 
-                core.buildObject(source, (def)=>{
+                core.type.buildObject(source, (def)=>{
                     var { name, propTypes, body, dependencies } = def;
                     
                     var hoverEvent = `core.template.hover.${name}`;
